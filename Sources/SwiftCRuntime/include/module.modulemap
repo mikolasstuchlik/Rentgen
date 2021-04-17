@@ -1,0 +1,4 @@
+module SwiftCRuntime {
+    header "SwiftCRuntime.h"
+    export *
+}
