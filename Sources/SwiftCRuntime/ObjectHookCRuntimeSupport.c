@@ -1,4 +1,5 @@
-#include "include/SwiftCRuntime.h"
+#include "include/ObjectHookCRuntimeSupport.h"
+#include <stdio.h>
 
 extern void *(*_swift_retain)(void *);
 extern void (*_swift_release)(void *);
@@ -79,6 +80,31 @@ bool remove_arc_observer_for( void * _Nonnull object) {
 }
 
 
+size_t swift_getMetadataKind(void *);
+const char * swift_OpaqueSummary(void *);
+const char *swift_getTypeName(void *classObject, _Bool qualified);
+
+static void attmeptInspectISA(const void * objectRef) {
+    size_t lowestValidPointer = 0x1000;
+
+    if (objectRef == NULL) {
+        return;
+    }
+
+    size_t isaField = *(size_t *)objectRef;
+    if (isaField >= lowestValidPointer) {
+        size_t type = *(size_t **)isaField;
+
+        if (swift_getMetadataKind((void *)isaField) == 0) {
+            printf("%zu %s %s\n", swift_getMetadataKind((void *)isaField), swift_OpaqueSummary((void *)isaField), swift_getTypeName(isaField, 1));
+        } else {
+            printf("%zu %s\n", swift_getMetadataKind((void *)isaField), swift_OpaqueSummary((void *)isaField));
+        }
+        if ( swift_getMetadataKind((void *)isaField) == 1024) {
+            printf("");
+        }
+  }
+}
 
 static void *swift_retain_hook(void *object) {
     void * result = _original_swift_retain(object);
@@ -90,6 +116,8 @@ static void *swift_retain_hook(void *object) {
             }
         }
     }
+
+    attmeptInspectISA(object);
 
     return result;
 }

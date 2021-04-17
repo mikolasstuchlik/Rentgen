@@ -1,11 +1,5 @@
 import SwiftCRuntime
 
-private final class ClosureBox<T, U> {
-    private let closure: (T)->U
-    init (closure: @escaping (T)->U) { self.closure = closure }
-    func invoke(arg: T) -> U { closure(arg) }
-}
-
 public enum ObjectHook {
     @discardableResult
     public static func addHook<T: AnyObject>(
@@ -33,15 +27,7 @@ public enum ObjectHook {
             Unmanaged<Callback>.fromOpaque(data).release()
         }
 
-        return add_arc_observer_for(
-            opaque,
-            executor,
-            opaqueRetain,
-            destroyer,
-            executor,
-            opaqueRelease,
-            destroyer
-        )
+        return add_arc_observer_for(opaque, executor, opaqueRetain, destroyer, executor, opaqueRelease, destroyer)
         
     }
 

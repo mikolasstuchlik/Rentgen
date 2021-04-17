@@ -2,12 +2,10 @@
 #define swiftcruntime_h
 
 #include <stdlib.h>
-#include <stdio.h>
 #include <stdbool.h>
+#include "CommonDeclarations.h"
 
 typedef void (*swift_object_observer_callback)(size_t, size_t, size_t, void * _Nullable);
-typedef void (*generic_user_data_destroy)(void * _Nullable);
-
 
 #define ARC_OBSERVERS_MAX_COUNT 100
 
