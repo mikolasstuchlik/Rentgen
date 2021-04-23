@@ -24,7 +24,7 @@ public struct AnyNonThrowing<Argument, Return> {
     /// Rebounds the closure to raw representation for the duration of the scope
     /// - Parameter validityScope: Block, in which the `reboundSelf` is valud
     /// - Parameter reboundSelf: Structure, allowing raw access to data of closure variable
-    public func reboundToRaw(_ validityScope: (_ reboundSelf: RawClosureRebound)->()) {
-        validityScope(unsafeBitCast(self.closure, to: RawClosureRebound.self))
+    public func reboundToRaw<Result>(_ validityScope: (_ reboundSelf: RawClosureRebound) throws ->Result) rethrows -> Result {
+        try validityScope(unsafeBitCast(self.closure, to: RawClosureRebound.self))
     }
 }
