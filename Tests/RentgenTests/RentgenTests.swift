@@ -1,7 +1,7 @@
 import XCTest
 @testable import Rentgen
 
-class Cls { }
+final class Cls {}
 
 final class RentgenTests: XCTestCase {
     func testExample() {
@@ -9,34 +9,43 @@ final class RentgenTests: XCTestCase {
         // Use XCTAssert and related functions to verify your tests produce the correct
         // results.
 
-        print("starting")
+        let cls = Cls()
 
-        let onRetain: (_ strong: Int, _ weak: Int, _ unowned: Int)->() = { strong, weak, unowned in
-            print("Did retain Strong(\(strong), Weak\(weak), Unowned\(unowned)")
-        }
-
-        let onRetain2 = onRetain
-
-
-
-        let cls1 = Cls()
-        let cls2 = Cls()
-
-
+        let inst2 = Cls()
+        let inst3 = Cls()
+        let inst4 = "Some string"
+        var inst5 = 1224
 
         ObjectHook.addHook(
-            for: cls1,
-            onRetain: onRetain,
+            for: cls,
+            onRetain: { strong, weak, unowned in
+                print("Did retain Strong(\(strong)), Weak(\(weak)), Unowned(\(unowned))")
+            },
             beforeRelease: { strong, weak, unowned in
-                print("Will release Strong(\(strong), Weak\(weak), Unowned\(unowned)")
+                print("Will release Strong(\(strong)), Weak(\(weak)), Unowned(\(unowned))")
             }
         )
 
-        let arr = [cls1, cls2]
-        let cp = cls1
-        weak var kks = cls1;
-        let cp3 = cls1
-        let cp2 = cls2
+        let clos = { cls }
+        let clos2 = clos
+        let clos3 = clos2
+
+        let clos21 = {
+            var abc = inst2
+            abc = inst3
+            _ = inst4
+            inst5 += 1
+        }
+
+        AnyNonThrowing(closure: clos3).reboundToRaw { raw in
+            _ = raw
+        }
+
+        AnyNonThrowing(closure: clos21).reboundToRaw { raw in
+            _ = raw
+        }
+
+        
     }
 
     static var allTests = [

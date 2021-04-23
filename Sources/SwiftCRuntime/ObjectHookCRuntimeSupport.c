@@ -95,16 +95,14 @@ static void attmeptInspectISA(const void * objectRef) {
     if (isaField >= lowestValidPointer) {
         size_t type = *(size_t **)isaField;
 
-        if (swift_getMetadataKind((void *)isaField) == 0) {
-            printf("%zu %s %s\n", swift_getMetadataKind((void *)isaField), swift_OpaqueSummary((void *)isaField), swift_getTypeName(isaField, 1));
-        } else {
-            printf("%zu %s\n", swift_getMetadataKind((void *)isaField), swift_OpaqueSummary((void *)isaField));
-        }
-        if ( swift_getMetadataKind((void *)isaField) == 1024) {
-            printf("");
-        }
+
+        printf("%p \t %zu \t %zu \t %s \t %s\n", objectRef, swift_retainCount(objectRef), swift_getMetadataKind((void *)isaField), swift_OpaqueSummary((void *)isaField), swift_getTypeName(isaField, 1));
   }
 }
+
+struct Rebound {
+    void * words[6];
+};
 
 static void *swift_retain_hook(void *object) {
     void * result = _original_swift_retain(object);
@@ -115,9 +113,12 @@ static void *swift_retain_hook(void *object) {
                 observers[i].didIncRef(swift_retainCount(object), swift_weakRetainCount(object), swift_unownedRetainCount(object), observers[i].incRefUserData);
             }
         }
+
+        //printf("words: %p %p %p %p %p %p\n", ((struct Rebound *)object)->words[0], ((struct Rebound *)object)->words[1], ((struct Rebound *)object)->words[2], ((struct Rebound *)object)->words[3], ((struct Rebound *)object)->words[4], ((struct Rebound *)object)->words[5]);
+        //attmeptInspectISA(object);
     }
 
-    attmeptInspectISA(object);
+    //printf("inc %p\n", (void *)object);
 
     return result;
 }
@@ -129,7 +130,7 @@ static void swift_release_hook(void *object) {
                 observers[i].willDecRef(swift_retainCount(object), swift_weakRetainCount(object), swift_unownedRetainCount(object), observers[i].decRefUserData);
 
                 if (swift_retainCount(object) == 1) {
-                    printf("Retain count 1 for observed object before release, removing observer");
+                    printf("Retain count 1 for observed object before release, removing observer\n");
                     remove_arc_observer_for(object);
                 }
             }
