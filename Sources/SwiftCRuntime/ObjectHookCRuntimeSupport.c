@@ -1,52 +1,67 @@
-#include "include/ObjectHookCRuntimeSupport.h"
 #include <stdio.h>
+#include "include/ObjectHookCRuntimeSupport.h"
+#include "include/ExposedSwiftRuntimeDeclarations.h"
+#include "PrivatelyExposedSwiftRuntime.h"
 
-extern void *(*_swift_retain)(void *);
-extern void (*_swift_release)(void *);
-
-/// From https://github.com/apple/swift/blob/dc09a66f29e8d785dee911259c6d2551aa782ff4/stdlib/public/core/DebuggerSupport.swift#L268
-size_t swift_retainCount(void *);
-
-/// From https://github.com/apple/swift/blob/dc09a66f29e8d785dee911259c6d2551aa782ff4/stdlib/public/core/DebuggerSupport.swift#L270
-size_t swift_unownedRetainCount(void *);
-
-/// From https://github.com/apple/swift/blob/dc09a66f29e8d785dee911259c6d2551aa782ff4/stdlib/public/core/DebuggerSupport.swift#L272
-size_t swift_weakRetainCount(void *);
-
+/// Storage for original implementation of "swizzeled" `swift_retain`.
 static void *(*_original_swift_retain)(void *);
+
+/// Storage for original implementation of "swizzeled" `swift_release`.
 static void (*_original_swift_release)(void *);
 
-
-struct ArcObserver {
+/// Structure associating heap object `object` with data required to execute and dispose of a hook whenever retain
+/// or release occurs.
+struct ArcRetainReleaseObserver {
+    /// Observed `HeapObject`
     void * object;
-    swift_object_observer_callback didIncRef;
+    /// Callback executed after retain occurs
+    swift_object_retain_release_callback didIncRef;
+    /// User data passed to retain increase callback.
     void * incRefUserData;
+    /// Callback executed when hook is disposed of in order to invalidate user data.
     generic_user_data_destroy _Nullable incRefDataDestroy;
-    swift_object_observer_callback willDecRef;
+    /// Callback executed before release occurs
+    swift_object_retain_release_callback willDecRef;
+    /// User data passed to retain decrease callback.
     void * decRefUserData;
+    /// Callback executed when hook is disposed of in order to invalidate user data.
     generic_user_data_destroy _Nullable decRefDataDestroy;
 };
 
-static struct ArcObserver observers[ARC_OBSERVERS_MAX_COUNT];
+/// This function sets all fields to NULL
+static void clean_arc_retain_observer(struct ArcRetainReleaseObserver * _Nonnull ptr) {
+    ptr->object = NULL;
+    ptr->didIncRef = NULL;
+    ptr->incRefUserData = NULL;
+    ptr->incRefDataDestroy = NULL;
+    ptr->willDecRef = NULL;
+    ptr->decRefUserData = NULL;
+    ptr->decRefDataDestroy = NULL;
+}
 
-bool add_arc_observer_for(
+/// Array representing pool of observer of strong retain/release operations. Dynamic data structure might be
+/// introduced in future.
+static struct ArcRetainReleaseObserver strong_observers[ARC_STRONG_OBSERVERS_MAX_COUNT];
+
+/// MARK: - Functions for manipulating strong retain/release events
+bool arc_add_strong_observer_for(
     void * _Nonnull object,
-    swift_object_observer_callback _Nonnull didIncRef,
+    swift_object_retain_release_callback _Nonnull didIncRef,
     void * _Nullable incRefUserData,
     generic_user_data_destroy _Nullable incRefDataDestroy,
-    swift_object_observer_callback _Nonnull willDecRef,
+    swift_object_retain_release_callback _Nonnull willDecRef,
     void * _Nullable decRefUserData,
     generic_user_data_destroy _Nullable decRefDataDestroy
 ) {
-    for (int i = 0; i < ARC_OBSERVERS_MAX_COUNT; i++) {
-        if (observers[i].object == NULL) {
-            observers[i].object = object;
-            observers[i].didIncRef = didIncRef;
-            observers[i].incRefUserData = incRefUserData;
-            observers[i].incRefDataDestroy = incRefDataDestroy;
-            observers[i].willDecRef = willDecRef;
-            observers[i].decRefUserData = decRefUserData;
-            observers[i].decRefDataDestroy = decRefDataDestroy;
+    for (int i = 0; i < ARC_STRONG_OBSERVERS_MAX_COUNT; i++) {
+        if (strong_observers[i].object == NULL) {
+            strong_observers[i].object = object;
+            strong_observers[i].didIncRef = didIncRef;
+            strong_observers[i].incRefUserData = incRefUserData;
+            strong_observers[i].incRefDataDestroy = incRefDataDestroy;
+            strong_observers[i].willDecRef = willDecRef;
+            strong_observers[i].decRefUserData = decRefUserData;
+            strong_observers[i].decRefDataDestroy = decRefDataDestroy;
             return true;
         }
     }
@@ -54,24 +69,18 @@ bool add_arc_observer_for(
     return false;
 }
 
-bool remove_arc_observer_for( void * _Nonnull object) {
+bool arc_remove_strong_observer_for( void * _Nonnull object) {
     bool found = false;
-    for (int i = 0; i < ARC_OBSERVERS_MAX_COUNT; i++) {
-        if (observers[i].object == object) {
-            if (observers[i].incRefDataDestroy != NULL) {
-                observers[i].incRefDataDestroy(observers[i].incRefUserData);
+    for (int i = 0; i < ARC_STRONG_OBSERVERS_MAX_COUNT; i++) {
+        if (strong_observers[i].object == object) {
+            if (strong_observers[i].incRefDataDestroy != NULL) {
+                strong_observers[i].incRefDataDestroy(strong_observers[i].incRefUserData);
             }
-            if (observers[i].decRefDataDestroy != NULL) {
-                observers[i].decRefDataDestroy(observers[i].decRefUserData);
+            if (strong_observers[i].decRefDataDestroy != NULL) {
+                strong_observers[i].decRefDataDestroy(strong_observers[i].decRefUserData);
             }
 
-            observers[i].object = NULL;
-            observers[i].didIncRef = NULL;
-            observers[i].incRefUserData = NULL;
-            observers[i].incRefDataDestroy = NULL;
-            observers[i].willDecRef = NULL;
-            observers[i].decRefUserData = NULL;
-            observers[i].decRefDataDestroy = NULL;
+            clean_arc_retain_observer(&strong_observers[i]);
             found = true;
         }
     }
@@ -79,59 +88,41 @@ bool remove_arc_observer_for( void * _Nonnull object) {
     return found;
 }
 
-
-size_t swift_getMetadataKind(void *);
-const char * swift_OpaqueSummary(void *);
-const char *swift_getTypeName(void *classObject, _Bool qualified);
-
-static void attmeptInspectISA(const void * objectRef) {
-    size_t lowestValidPointer = 0x1000;
-
-    if (objectRef == NULL) {
-        return;
+int arc_count_strong_hooks() {
+    int count = 0;
+    for (int i = 0; i < ARC_STRONG_OBSERVERS_MAX_COUNT; i++) {
+        if (strong_observers[i].object != NULL) {
+            count++;
+        }
     }
 
-    size_t isaField = *(size_t *)objectRef;
-    if (isaField >= lowestValidPointer) {
-        size_t type = *(size_t **)isaField;
-
-
-        printf("%p \t %zu \t %zu \t %s \t %s\n", objectRef, swift_retainCount(objectRef), swift_getMetadataKind((void *)isaField), swift_OpaqueSummary((void *)isaField), swift_getTypeName(isaField, 1));
-  }
+    return count;
 }
 
-struct Rebound {
-    void * words[6];
-};
-
+// MARK: - Runtime injection
 static void *swift_retain_hook(void *object) {
     void * result = _original_swift_retain(object);
 
     if (object != NULL) {
-        for (int i = 0; i < ARC_OBSERVERS_MAX_COUNT; i++) {
-            if (observers[i].object == object) {
-                observers[i].didIncRef(swift_retainCount(object), swift_weakRetainCount(object), swift_unownedRetainCount(object), observers[i].incRefUserData);
+        for (int i = 0; i < ARC_STRONG_OBSERVERS_MAX_COUNT; i++) {
+            if (strong_observers[i].object == object) {
+                strong_observers[i].didIncRef(swift_retainCount(object), swift_weakRetainCount(object), swift_unownedRetainCount(object), strong_observers[i].incRefUserData);
             }
         }
-
-        //printf("words: %p %p %p %p %p %p\n", ((struct Rebound *)object)->words[0], ((struct Rebound *)object)->words[1], ((struct Rebound *)object)->words[2], ((struct Rebound *)object)->words[3], ((struct Rebound *)object)->words[4], ((struct Rebound *)object)->words[5]);
-        //attmeptInspectISA(object);
     }
-
-    //printf("inc %p\n", (void *)object);
 
     return result;
 }
 
 static void swift_release_hook(void *object) {
     if (object != NULL) {
-        for (int i = 0; i < ARC_OBSERVERS_MAX_COUNT; i++) {
-            if (observers[i].object == object) {
-                observers[i].willDecRef(swift_retainCount(object), swift_weakRetainCount(object), swift_unownedRetainCount(object), observers[i].decRefUserData);
+        for (int i = 0; i < ARC_STRONG_OBSERVERS_MAX_COUNT; i++) {
+            if (strong_observers[i].object == object) {
+                strong_observers[i].willDecRef(swift_retainCount(object), swift_weakRetainCount(object), swift_unownedRetainCount(object), strong_observers[i].decRefUserData);
 
                 if (swift_retainCount(object) == 1) {
                     printf("Retain count 1 for observed object before release, removing observer\n");
-                    remove_arc_observer_for(object);
+                    arc_remove_strong_observer_for(object);
                 }
             }
         }
@@ -140,23 +131,20 @@ static void swift_release_hook(void *object) {
     _original_swift_release(object);
 }
 
+/// This function is automaticaly executed when program is started
 __attribute__((constructor))
 static void hook_rentgen_into_swift() {
-    for (int i = 0; i < ARC_OBSERVERS_MAX_COUNT; i++) {
-        observers[i].object = NULL;
-        observers[i].didIncRef = NULL;
-        observers[i].incRefUserData = NULL;
-        observers[i].incRefDataDestroy = NULL;
-        observers[i].willDecRef = NULL;
-        observers[i].decRefUserData = NULL;
-        observers[i].decRefDataDestroy = NULL;
+    // This initialization is merely for piece of mind
+    for (int i = 0; i < ARC_STRONG_OBSERVERS_MAX_COUNT; i++) {
+        clean_arc_retain_observer(&strong_observers[i]);
     }
 
-
+    // Replace original retain with hook
     _original_swift_retain = _swift_retain;
     _swift_retain = swift_retain_hook;
 
-
+    // Replace original release with hook
     _original_swift_release = _swift_release;
     _swift_release = swift_release_hook;
 }
+
