@@ -7,6 +7,7 @@ let package = Package(
     ],
     targets: [
         .target(name: "Rentgen", dependencies: ["SwiftCRuntime"]),
-        .target(name: "SwiftCRuntime")
+        .target(name: "SwiftCRuntime"),
+        .testTarget(name: "RentgenTests", dependencies: ["Rentgen"])
     ]
 )

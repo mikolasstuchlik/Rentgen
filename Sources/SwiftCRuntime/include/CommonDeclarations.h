@@ -1,6 +1,8 @@
 #ifndef commondeclarations_h
 #define commondeclarations_h
 
+#include <stddef.h>
+
 /// Callback which should be called before a any hook user data is disposed of.
 /// @param user_data: Pointer to user data
 typedef void (*generic_user_data_destroy)(void * _Nullable);
