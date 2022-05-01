@@ -17,8 +17,8 @@ public enum ObjectArcTool {
 }
 
 public extension ObjectArcTool.Strong {
-    var maxHooks: Int { Int(ARC_STRONG_OBSERVERS_MAX_COUNT) }
-    var freeHooks: Int { Int(arcCountStrongHooks()) }
+    var maxHooks: Int { Int(ARC_STRONG_OBSERVERS_PER_POOL) }
+    var freeHooks: Int { Int(arcCountStrongHooks(at: ObjectPool)) }
 
     
     @discardableResult
@@ -29,6 +29,7 @@ public extension ObjectArcTool.Strong {
     ) -> Bool {
         arcAddStrongObserver(
             heapObjectAddress: Unmanaged.passUnretained(instance).toOpaque(),
+            at: ObjectPool,
             didIncrementCallback: ObjectArcTool.executor,
             didIncrementUserData: Unmanaged.passRetained(ClosureBox(onRetain)).toOpaque(),
             destroyDidIncrementUserDataCallback: ObjectArcTool.destroyer,

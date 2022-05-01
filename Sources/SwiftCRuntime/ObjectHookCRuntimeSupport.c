@@ -13,7 +13,7 @@ static void (*_original_swift_release)(void *);
 /// or release occurs.
 struct ArcRetainReleaseObserver {
     /// Observed `HeapObject`
-    void * object;
+    const void * object;
     /// Callback executed after retain occurs
     swift_object_retain_release_callback didIncRef;
     /// User data passed to retain increase callback.
@@ -41,11 +41,12 @@ static void clean_arc_retain_observer(struct ArcRetainReleaseObserver * _Nonnull
 
 /// Array representing pool of observer of strong retain/release operations. Dynamic data structure might be
 /// introduced in future.
-static struct ArcRetainReleaseObserver strong_observers[ARC_STRONG_OBSERVERS_MAX_COUNT];
+static struct ArcRetainReleaseObserver strong_observers[ARC_STRONG_OBSERVERS_TOTAL];
 
 /// MARK: - Functions for manipulating strong retain/release events
 bool arc_add_strong_observer_for(
-    void * _Nonnull object,
+    const void * _Nonnull object,
+    enum StrongHookPool pool,
     swift_object_retain_release_callback _Nonnull didIncRef,
     void * _Nullable incRefUserData,
     generic_user_data_destroy _Nullable incRefDataDestroy,
@@ -53,15 +54,16 @@ bool arc_add_strong_observer_for(
     void * _Nullable decRefUserData,
     generic_user_data_destroy _Nullable decRefDataDestroy
 ) {
-    for (int i = 0; i < ARC_STRONG_OBSERVERS_MAX_COUNT; i++) {
-        if (strong_observers[i].object == NULL) {
-            strong_observers[i].object = object;
-            strong_observers[i].didIncRef = didIncRef;
-            strong_observers[i].incRefUserData = incRefUserData;
-            strong_observers[i].incRefDataDestroy = incRefDataDestroy;
-            strong_observers[i].willDecRef = willDecRef;
-            strong_observers[i].decRefUserData = decRefUserData;
-            strong_observers[i].decRefDataDestroy = decRefDataDestroy;
+    for (int i = 0; i < ARC_STRONG_OBSERVERS_PER_POOL; i++) {
+        int index = NUMBER_OF_STRONG_POOLS * i + pool;
+        if (strong_observers[index].object == NULL) {
+            strong_observers[index].object = object;
+            strong_observers[index].didIncRef = didIncRef;
+            strong_observers[index].incRefUserData = incRefUserData;
+            strong_observers[index].incRefDataDestroy = incRefDataDestroy;
+            strong_observers[index].willDecRef = willDecRef;
+            strong_observers[index].decRefUserData = decRefUserData;
+            strong_observers[index].decRefDataDestroy = decRefDataDestroy;
             return true;
         }
     }
@@ -69,9 +71,9 @@ bool arc_add_strong_observer_for(
     return false;
 }
 
-bool arc_remove_strong_observer_for( void * _Nonnull object) {
+bool arc_remove_strong_observer_for(const void * _Nonnull object) {
     bool found = false;
-    for (int i = 0; i < ARC_STRONG_OBSERVERS_MAX_COUNT; i++) {
+    for (int i = 0; i < ARC_STRONG_OBSERVERS_TOTAL; i++) {
         if (strong_observers[i].object == object) {
             if (strong_observers[i].incRefDataDestroy != NULL) {
                 strong_observers[i].incRefDataDestroy(strong_observers[i].incRefUserData);
@@ -88,10 +90,11 @@ bool arc_remove_strong_observer_for( void * _Nonnull object) {
     return found;
 }
 
-int arc_count_strong_hooks() {
+int arc_count_strong_hooks(enum StrongHookPool pool) {
     int count = 0;
-    for (int i = 0; i < ARC_STRONG_OBSERVERS_MAX_COUNT; i++) {
-        if (strong_observers[i].object != NULL) {
+    for (int i = 0; i < ARC_STRONG_OBSERVERS_PER_POOL; i++) {
+        int index = NUMBER_OF_STRONG_POOLS * i + pool;
+        if (strong_observers[index].object != NULL) {
             count++;
         }
     }
@@ -104,7 +107,7 @@ static void *swift_retain_hook(void *object) {
     void * result = _original_swift_retain(object);
 
     if (object != NULL) {
-        for (int i = 0; i < ARC_STRONG_OBSERVERS_MAX_COUNT; i++) {
+        for (int i = 0; i < ARC_STRONG_OBSERVERS_TOTAL; i++) {
             if (strong_observers[i].object == object) {
                 strong_observers[i].didIncRef(swift_retainCount(object), swift_weakRetainCount(object), swift_unownedRetainCount(object), strong_observers[i].incRefUserData);
             }
@@ -116,7 +119,7 @@ static void *swift_retain_hook(void *object) {
 
 static void swift_release_hook(void *object) {
     if (object != NULL) {
-        for (int i = 0; i < ARC_STRONG_OBSERVERS_MAX_COUNT; i++) {
+        for (int i = 0; i < ARC_STRONG_OBSERVERS_TOTAL; i++) {
             if (strong_observers[i].object == object) {
                 strong_observers[i].willDecRef(swift_retainCount(object), swift_weakRetainCount(object), swift_unownedRetainCount(object), strong_observers[i].decRefUserData);
 
@@ -135,7 +138,7 @@ static void swift_release_hook(void *object) {
 __attribute__((constructor))
 static void hook_rentgen_into_swift() {
     // This initialization is merely for piece of mind
-    for (int i = 0; i < ARC_STRONG_OBSERVERS_MAX_COUNT; i++) {
+    for (int i = 0; i < ARC_STRONG_OBSERVERS_TOTAL; i++) {
         clean_arc_retain_observer(&strong_observers[i]);
     }
 
