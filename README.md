@@ -2,6 +2,10 @@
 
 Rentgen is a troubleshooting tool, that allows you to observe `release` and `retain` events on class and closure types. The hooking is allowed by "swizzeling" the Swift Runtime calls.
 
+## Deprecation notice
+
+This package is deprecated. I strongly recommed using my [`arctool` and `closuredesc` scripts for LLDB](https://github.com/mikolasstuchlik/lldbscripts). You can achieve essentially the same functionality.
+
 ## Usage
 
 All you need to do in order to use the Rentgen is adding it as dependency to your project and desired target in **Swift Package Manager**:
