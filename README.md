@@ -4,7 +4,7 @@ Rentgen is a troubleshooting tool, that allows you to observe `release` and `ret
 
 ## Deprecation notice
 
-This package is deprecated. I strongly recommed using my [`arctool` and `closuredesc` scripts for LLDB](https://github.com/mikolasstuchlik/lldbscripts). You can achieve essentially the same functionality.
+This package is deprecated. I strongly recommed using my [`arctool` and `closuredesc` scripts for LLDB](https://github.com/mikolasstuchlik/lldbscripts). You can achieve essentially the same functionality, without the need to add any Swift code to your program.
 
 ## Usage
 
